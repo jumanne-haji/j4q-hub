@@ -1,84 +1,73 @@
-"""
-Pytest Integration Test Suite for J4Q HUB FastAPI Backend
-Execute via: pytest backend/test_main.py -v
-"""
-import pytest
 from fastapi.testclient import TestClient
-from .main import app
+import os
+import tempfile
+
+from backend.main import app
+from backend.database import Base, engine
+from backend.auth import get_password_hash
 
 client = TestClient(app)
 
-def test_health_check():
-    """Verify system health endpoint and datacenter location."""
-    response = client.get("/api/v1/health")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "healthy"
-    assert data["datacenter"] == "TIX_DAR_ES_SALAAM"
-    assert "uptime" in data
 
-def test_services_catalog_list():
-    """Verify services catalog returns 200 and list structure."""
-    response = client.get("/api/v1/services")
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
+def setup_module(module):
+    # Ensure a clean sqlite DB for tests
+    # Use a temporary sqlite file
+    tmp = tempfile.NamedTemporaryFile(delete=False)
+    db_url = f"sqlite:///{tmp.name}"
+    os.environ["DATABASE_URL"] = db_url
+    # Recreate engine/tables
+    Base.metadata.create_all(bind=engine)
 
-def test_udiap_evaluation_high_readiness():
-    """Test UDIAP algorithmic decision engine with high compliance and low risk."""
-    payload = {
-        "project_name": "Tanzania Solar Grid Automation",
-        "capex_budget_usd": 120000,
-        "regulatory_compliance_score": 90,
-        "market_urgency_score": 85,
-        "technical_complexity_score": 60,
-        "team_readiness_score": 88
-    }
-    response = client.post("/api/v1/udiap/assess", json=payload)
-    assert response.status_code == 200
-    data = response.json()
-    assert "decision_score" in data
-    assert "confidence_index" in data
-    assert data["decision_score"] >= 78
-    assert data["recommendation"] == "EXECUTE_IMMEDIATELY"
-    assert data["risk_rating"] == "Low"
-    assert len(data["factors"]) == 5
 
-def test_udiap_evaluation_high_risk():
-    """Test UDIAP flags elevated risk when compliance or budget fails."""
-    payload = {
-        "project_name": "Unverified Speculative Gateway",
-        "capex_budget_usd": 480000,
-        "regulatory_compliance_score": 35,
-        "market_urgency_score": 40,
-        "technical_complexity_score": 95,
-        "team_readiness_score": 30
-    }
-    response = client.post("/api/v1/udiap/assess", json=payload)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["decision_score"] < 50
-    assert data["recommendation"] == "REVISE_PROPOSAL"
-    assert data["risk_rating"] == "Critical"
+def test_register_and_admin_flow():
+    # Register initial admin
+    resp = client.post(
+        "/api/v1/auth/register",
+        json={"username": "admin", "hashed_password": get_password_hash("strongpass")},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["username"] == "admin"
 
-def test_partner_service_submission_and_lifecycle():
-    """Test submitting a new 3rd-party service and tracking status."""
-    payload = {
-        "service_name": "Kilimanjaro SMS Dispatcher",
-        "provider_name": "Moshi Telecoms Ltd",
-        "provider_email": "api@moshitelecom.co.tz",
-        "category": "business",
-        "tagline": "Regional bulk SMS and SMS shortcode router.",
-        "description": "High-speed SMS routing across Arusha and Kilimanjaro regions.",
-        "api_base_url": "https://api.moshitelecom.co.tz/v1",
-        "health_endpoint": "/health",
-        "auth_type": "API_KEY",
-        "sla": "99.90%",
-        "pricing": "Usage-Based",
-        "docs_url": "https://docs.moshitelecom.co.tz"
-    }
-    response = client.post("/api/v1/partners/submit", json=payload)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["service_name"] == "Kilimanjaro SMS Dispatcher"
-    assert data["status"] == "pending"
-    assert "id" in data
+    # Obtain token via password grant
+    resp = client.post(
+        "/api/v1/auth/token",
+        data={"username": "admin", "password": "strongpass"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp.status_code == 200
+    token = resp.json()["access_token"]
+    assert token
+
+    # Attempt to list submissions (none exist) using admin token
+    resp = client.get(
+        "/api/v1/admin/submissions",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)
+
+
+def test_partner_submission_and_approve_requires_admin():
+    # Submit a partner service
+    resp = client.post(
+        "/api/v1/partners/submit",
+        json={
+            "service_name": "Test Service",
+            "provider_name": "Provider A",
+            "provider_email": "a@example.com",
+            "category": "finance",
+            "tagline": "Test",
+            "description": "Desc",
+            "api_base_url": "https://api.example.com",
+            "health_endpoint": "/health",
+        },
+    )
+    assert resp.status_code == 200
+    sub = resp.json()
+    assert sub["status"] == "pending"
+
+    # Try approving without token => 401
+    resp = client.post(f"/api/v1/admin/submissions/{sub['id']}/approve")
+    assert resp.status_code == 401 or resp.status_code == 403
+

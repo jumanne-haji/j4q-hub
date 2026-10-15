@@ -9,8 +9,8 @@ if not DATABASE_URL.startswith("postgresql"):
     DATABASE_URL = "sqlite:///./j4q_hub.db"
 
 engine = create_engine(
-    DATABASE_URL, 
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

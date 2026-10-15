@@ -64,3 +64,13 @@ class UdiapAssessmentModel(Base):
     recommendation = Column(String(64), nullable=False)
     risk_rating = Column(String(32), nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+# New user model for authentication
+class UserModel(Base):
+    __tablename__ = "users"
+
+    username = Column(String(128), primary_key=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    role = Column(String(32), default="user", index=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)

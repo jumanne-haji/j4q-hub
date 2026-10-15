@@ -21,7 +21,7 @@ class ServiceBase(BaseModel):
     status: str = "operational"
     version: str = "v1.0.0"
     sla: str = "99.95%"
-    api_base_url: str
+    api_base_url: HttpUrl
     auth_type: str = "API_KEY"
     pricing: str = "Usage-Based"
     features: List[str] = []
@@ -43,7 +43,7 @@ class PartnerSubmissionCreate(BaseModel):
     category: str
     tagline: str
     description: str
-    api_base_url: str
+    api_base_url: HttpUrl
     health_endpoint: str = "/health"
     auth_type: str = "API_KEY"
     sla: str = "99.95%"
@@ -80,3 +80,16 @@ class UdiapAssessmentResponse(BaseModel):
     factors: List[Dict[str, Any]]
     mitigation_steps: List[str]
     timestamp: datetime.datetime
+
+# Authentication schemas
+class UserCreate(BaseModel):
+    username: str
+    hashed_password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: str
+    role: Optional[str] = None
